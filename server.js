@@ -26,18 +26,20 @@ wss.on('connection', ws => {
         socket: ws,
         type: 'host',
         max: data.maxConnections,
+        count: 0,
         map: Object.keys(clients).map(id => {
 
           if(clients[id].type == 'host') {
-            clients[id].socket.send(JSON.stringify({
-              action: 'requestoffer',
-              fromId: data.fromId
-            }))
 
             clients[id].map.push({
               id: data.fromId,
               type: 'host'
             })
+
+            clients[id].socket.send(JSON.stringify({
+              action: 'requestoffer',
+              fromId: data.fromId
+            }))
 
             return {
               id: id,
@@ -56,17 +58,16 @@ wss.on('connection', ws => {
         let toId = clientIds[i]
         if(clients[toId].type == 'host') {
 
-          if(clients[toId].map.length < clients[toId].max) {
+          console.log('connecting', data.fromId, 'to host', toId)
 
-            clients[toId].socket.send(JSON.stringify({
-              action: 'requestoffer',
-              fromId: data.fromId
-            }))
+          if(clients[toId].count < clients[toId].max) {
 
             clients[data.fromId] = {
               id: data.fromId,
               socket: ws,
               type: 'peer',
+              max: data.maxConnections,
+              count: 0,
               map: [{
                 id: toId,
                 type: 'host'
@@ -76,48 +77,62 @@ wss.on('connection', ws => {
             clients[toId].map.push({
               id: data.fromId,
               toId: toId,
-              type: 'peer',
-              max: data.maxConnections,
-              map: []
+              type: 'peer'
             })
 
-            break
+            clients[toId].count += 1
+
+            clients[toId].socket.send(JSON.stringify({
+              action: 'requestoffer',
+              fromId: data.fromId
+            }))
+
+            continue
 
           } else {
 
             const requestRelay = (peer, depth) => {
 
-              if(peer.map.length < peer.max) {
+              if(clients[peer.id].count < clients[peer.id].max) {
 
-                clients[peer.id].socket.send(JSON.stringify({
-                  action: 'requestrelay',
-                  fromId: data.fromId,
-                  toId: peer.toId
-                }))
-
-                clients[data.fromId] = {
-                  id: data.fromId,
-                  socket: ws,
-                  type: 'relay',
-                  depth: depth,
-                  map: [{
-                    id: peer.toId,
-                    peerId: peer.id,
-                    type: 'relay'
-                  }]
-                }
-
-                peer.map.push({
-                  id: data.fromId,
-                  toId: peer.id,
-                  relayId: peer.toId,
-                  type: 'relay',
-                  depth: depth,
-                  max: data.maxConnections,
-                  map: []
+                let validateIndex = clients[peer.id].map.findIndex(value => {
+                  return value.id == data.fromId
                 })
 
-                return true
+                if(validateIndex < 0) {
+
+                  clients[data.fromId] = {
+                    id: data.fromId,
+                    socket: ws,
+                    type: 'relay',
+                    depth: depth,
+                    max: data.maxConnections,
+                    count: 0,
+                    map: [{
+                      id: peer.toId,
+                      peerId: peer.id,
+                      type: 'relay'
+                    }]
+                  }
+
+                  clients[peer.id].map.push({
+                    id: data.fromId,
+                    toId: peer.id,
+                    relayId: peer.toId,
+                    type: 'relay'
+                  })
+
+                  clients[peer.id].count += 1
+
+                  clients[peer.id].socket.send(JSON.stringify({
+                    action: 'requestrelay',
+                    fromId: data.fromId,
+                    toId: peer.toId
+                  }))
+
+                  return true
+
+                }
               }
 
               return false
@@ -128,19 +143,25 @@ wss.on('connection', ws => {
               let relaySuccessful = false
               if(peers.length > 0) {
                 for(let j=0;j<peers.length;j++) {
+
                   relaySuccessful = requestRelay(peers[j], depth)
                   if(relaySuccessful) {
-                    //console.log(data.fromId, 'relaying', peers[j].toId, 'through', peers[j].id)
+
+                    console.log(data.fromId, 'relaying', peers[j].toId, 'through', peers[j].id, 'at depth', depth)
+
                     return true
                   } else {
-                    nextLayer = nextLayer.concat(peers[j].map)
+                    nextLayer = nextLayer.concat(clients[peers[j].id].map)
                   }
                 }
                 return requestRelayLoop(nextLayer, depth+1)
               }
             }
 
-            requestRelayLoop(clients[toId].map, 1)
+            let relaySuccess = requestRelayLoop(clients[toId].map, 1)
+            if(!relaySuccess) {
+              console.dir(clients, { depth: 2 })
+            }
 
           }
         }
