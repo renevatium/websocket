@@ -169,6 +169,8 @@ wss.on('connection', ws => {
 
     } else if(data.action == 'leavemeeting') {
 
+      console.log('leavemeeting', data.fromId)
+
       delete clients[data.fromId]
       Object.keys(clients).map(id => {
         clients[id].map.filter(client => client.id != data.fromId);
@@ -204,7 +206,7 @@ wss.on('connection', ws => {
 
     } else if(data.action == 'togglevideo') {
 
-      Object.values(clients[data.fromId].map).forEach(peer => {
+      clients[data.fromId].map.forEach(peer => {
         clients[peer.id].socket.send(JSON.stringify({
           action: 'toggleremotevideo',
           fromId: data.fromId,
@@ -214,7 +216,7 @@ wss.on('connection', ws => {
 
     } else if(data.action == 'toggleaudio') {
 
-      Object.values(clients[data.fromId].map).forEach(peer => {
+      clients[data.fromId].map.forEach(peer => {
         clients[peer.id].socket.send(JSON.stringify({
           action: 'toggleremoteaudio',
           fromId: data.fromId,
